@@ -10,6 +10,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from models.diffusion_engine import SimulationResult
+from visualization.shrimp_model import build_shrimp_mesh3d_trace
 
 
 class InteractivePlotter:
@@ -195,81 +196,14 @@ class InteractivePlotter:
         )
 
         if stocking_count > 0:
-            representative_count = min(stocking_count, 120)
-            rng = np.random.default_rng(42)
-            shrimp_x = rng.uniform(pond_x[0], pond_x[1], representative_count)
-            shrimp_y = rng.uniform(pond_y[0], pond_y[1], representative_count)
-            shrimp_z = rng.uniform(
-                result.z_coords[max(0, int(0.75 * (nz - 1)))],
-                pond_z[1],
-                representative_count,
-            )
-            shrimp_line_x: list[float | None] = []
-            shrimp_line_y: list[float | None] = []
-            shrimp_line_z: list[float | None] = []
-            shrimp_joint_x: list[float] = []
-            shrimp_joint_y: list[float] = []
-            shrimp_joint_z: list[float] = []
-
-            def add_segment(
-                points: list[tuple[float, float, float]],
-                origin_x: float,
-                origin_y: float,
-                origin_z: float,
-                angle: float,
-            ) -> None:
-                cos_angle, sin_angle = np.cos(angle), np.sin(angle)
-                for local_x, local_y, local_z in points:
-                    shrimp_line_x.append(origin_x + local_x * cos_angle - local_y * sin_angle)
-                    shrimp_line_y.append(origin_y + local_x * sin_angle + local_y * cos_angle)
-                    shrimp_line_z.append(origin_z + local_z)
-                shrimp_line_x.append(None)
-                shrimp_line_y.append(None)
-                shrimp_line_z.append(None)
-
-            for x, y, z in zip(shrimp_x, shrimp_y, shrimp_z):
-                angle = float(rng.uniform(0.0, 2.0 * np.pi))
-                body = [
-                    (0.28, 0.00, 0.00), (0.19, 0.09, 0.015), (0.19, -0.09, 0.015),
-                    (0.08, 0.13, 0.025), (0.08, -0.13, 0.025),
-                    (-0.06, 0.11, 0.02), (-0.06, -0.11, 0.02),
-                    (-0.19, 0.07, 0.01), (-0.19, -0.07, 0.01),
-                    (-0.30, 0.00, 0.00),
-                ]
-                add_segment(body, x, y, z, angle)
-                add_segment([(0.30, 0.00, 0.0), (0.42, 0.09, 0.015), (0.53, 0.14, 0.02)], x, y, z, angle)
-                add_segment([(0.30, 0.00, 0.0), (0.42, -0.09, 0.015), (0.53, -0.14, 0.02)], x, y, z, angle)
-                add_segment([(-0.28, 0.00, 0.0), (-0.43, 0.12, 0.02), (-0.43, -0.12, 0.02)], x, y, z, angle)
-                add_segment([(0.16, 0.07, -0.02), (0.04, 0.20, -0.035)], x, y, z, angle)
-                add_segment([(0.16, -0.07, -0.02), (0.04, -0.20, -0.035)], x, y, z, angle)
-                add_segment([(0.02, 0.09, -0.02), (-0.10, 0.19, -0.04)], x, y, z, angle)
-                add_segment([(0.02, -0.09, -0.02), (-0.10, -0.19, -0.04)], x, y, z, angle)
-                for local_x, local_y in [(0.28, 0.0), (0.08, 0.0), (-0.10, 0.0), (-0.25, 0.0)]:
-                    cos_angle, sin_angle = np.cos(angle), np.sin(angle)
-                    shrimp_joint_x.append(x + local_x * cos_angle - local_y * sin_angle)
-                    shrimp_joint_y.append(y + local_x * sin_angle + local_y * cos_angle)
-                    shrimp_joint_z.append(z + 0.02)
+            benthic_z_min = float(result.z_coords[max(0, int(0.75 * (nz - 1)))])
             fig.add_trace(
-                go.Scatter3d(
-                    x=shrimp_line_x,
-                    y=shrimp_line_y,
-                    z=shrimp_line_z,
-                    mode="lines",
-                    name=f"Shrimp (representative {representative_count:,} of {stocking_count:,})",
-                    line=dict(color="#F97316", width=5),
-                    hoverinfo="skip",
-                )
-            )
-            fig.add_trace(
-                go.Scatter3d(
-                    x=shrimp_joint_x,
-                    y=shrimp_joint_y,
-                    z=shrimp_joint_z,
-                    mode="markers",
-                    name="Shrimp body segments",
-                    marker=dict(size=4, color="#FDBA74", opacity=0.95),
-                    hoverinfo="skip",
-                    showlegend=False,
+                build_shrimp_mesh3d_trace(
+                    pond_x=pond_x,
+                    pond_y=pond_y,
+                    pond_z=pond_z,
+                    benthic_z_min=benthic_z_min,
+                    stocking_count=stocking_count,
                 )
             )
 

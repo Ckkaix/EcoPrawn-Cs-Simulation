@@ -7,8 +7,9 @@ from uuid import uuid4
 
 import numpy as np
 from fastapi import FastAPI, HTTPException
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from ingestion.api_client import EnvironmentalAPIClient, WeatherData24H
@@ -29,6 +30,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc: RequestValidationError):
+    error_messages = []
+    for err in exc.errors():
+        loc = [str(x) for x in err.get("loc", []) if x != "body"]
+        field_name = " -> ".join(loc) if loc else "request"
+        msg = err.get("msg", "Invalid value")
+        error_messages.append(f"{field_name}: {msg}")
+    
+    formatted_detail = "Validation Error: " + "; ".join(error_messages)
+    return JSONResponse(
+        status_code=422,
+        content={"detail": formatted_detail, "errors": exc.errors()},
+    )
+
+
 simulations: Dict[str, Dict[str, Any]] = {}
 FINANCIAL_REPORT_FIELDS = {
     "total_feed_cost_php",
@@ -47,12 +65,12 @@ class SimulationRequest(BaseModel):
     longitude: float = Field(default=121.0441, ge=-180, le=180)
     location_name: str = Field(default="Caloocan City, Metro Manila", max_length=120)
     weather_condition: str = Field(default="Sunny / Clear Skies")
-    length: float = Field(default=20.0, ge=10, le=100)
-    width: float = Field(default=20.0, ge=10, le=100)
-    depth: float = Field(default=1.5, ge=0.8, le=3.0)
+    length: float = Field(default=20.0, ge=5.0, le=200.0)
+    width: float = Field(default=20.0, ge=5.0, le=200.0)
+    depth: float = Field(default=1.5, ge=0.5, le=4.0)
     grid: str = Field(default="standard")
-    stocking_count: int = Field(default=18000, ge=1000, le=200000)
-    individual_weight_g: float = Field(default=18.0, ge=5, le=35)
+    stocking_count: int = Field(default=18000, ge=500, le=300000)
+    individual_weight_g: float = Field(default=18.0, ge=2.0, le=45.0)
     feed_type: str = Field(default=FeedType.ORDINARY.value)
     aeration_enabled: bool = False
     aeration_start_hour: int = Field(default=1, ge=0, le=23)

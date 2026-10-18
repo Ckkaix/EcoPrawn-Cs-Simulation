@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import Plot from "react-plotly.js";
+import Plot from "./Plot";
 
 const API = import.meta.env.VITE_API_URL ?? "/api";
 type Tab = "spatial" | "diurnal" | "feasibility" | "optimizer" | "report";
@@ -45,12 +45,59 @@ function App() {
   const loadSimulation = async (event?: FormEvent) => {
     event?.preventDefault();
     setLoading(true); setError("");
+
+    if (!form.length || form.length < 5 || form.length > 200) {
+      setError("Pond length must be between 5m and 200m.");
+      setLoading(false);
+      return;
+    }
+    if (!form.width || form.width < 5 || form.width > 200) {
+      setError("Pond width must be between 5m and 200m.");
+      setLoading(false);
+      return;
+    }
+    if (!form.depth || form.depth < 0.5 || form.depth > 4.0) {
+      setError("Pond depth must be between 0.5m and 4.0m.");
+      setLoading(false);
+      return;
+    }
+    if (!form.stocking_count || form.stocking_count < 500 || form.stocking_count > 300000) {
+      setError("Stocking count must be between 500 and 300,000 juveniles.");
+      setLoading(false);
+      return;
+    }
+    if (!form.individual_weight_g || form.individual_weight_g < 2 || form.individual_weight_g > 45) {
+      setError("Individual weight must be between 2g and 45g.");
+      setLoading(false);
+      return;
+    }
+
     try {
       const response = await fetch(`${API}/simulations`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form),
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
       });
-      if (!response.ok) throw new Error((await response.json()).detail ?? "Simulation failed");
-      const nextSummary = await response.json();
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        let msg = `Simulation failed (${response.status})`;
+        if (data?.detail) {
+          if (typeof data.detail === "string") {
+            msg = data.detail;
+          } else if (Array.isArray(data.detail)) {
+            msg = data.detail
+              .map((d: any) => {
+                const loc = Array.isArray(d.loc)
+                  ? d.loc.filter((p: any) => p !== "body").join(".")
+                  : "field";
+                return `${loc ? loc + ": " : ""}${d.msg || "invalid value"}`;
+              })
+              .join("; ");
+          }
+        }
+        throw new Error(msg);
+      }
+      const nextSummary = data;
       setSummary(nextSummary);
       const [nextDiurnal, nextSpatial] = await Promise.all([
         fetch(`${API}/simulations/${nextSummary.id}/diurnal`).then((item) => item.json()),
@@ -81,10 +128,24 @@ function App() {
     if (!summary) return;
     setOptimizerLoading(true); setError("");
     try {
-      const response = await fetch(`${API}/simulations/${summary.id}/optimizer`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify([10000, 20000, 30000, 40000, 50000]) });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.detail ?? "Scenario sweep failed");
-      setOptimizer(payload.results ?? []);
+      const response = await fetch(`${API}/simulations/${summary.id}/optimizer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify([10000, 20000, 30000, 40000, 50000]),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        let msg = "Scenario sweep failed";
+        if (payload?.detail) {
+          if (typeof payload.detail === "string") {
+            msg = payload.detail;
+          } else if (Array.isArray(payload.detail)) {
+            msg = payload.detail.map((d: any) => d.msg).join("; ");
+          }
+        }
+        throw new Error(msg);
+      }
+      setOptimizer(payload?.results ?? []);
     } catch (problem) {
       setError(problem instanceof Error ? problem.message : "Unable to run the scenario sweep");
     } finally { setOptimizerLoading(false); }
@@ -98,11 +159,11 @@ function App() {
         <form onSubmit={loadSimulation} className="controls">
           <section><div className="section-label"><span>01</span> ENVIRONMENT</div>
             <select value={form.source} onChange={(e) => updateForm("source", e.target.value)}><option value="synthetic">Synthetic diurnal model</option><option value="live">Live Open-Meteo API</option></select>
-            {form.source === "live" && <><label>Site label<input value={form.location_name} onChange={(e) => updateForm("location_name", e.target.value)} /></label><div className="split"><label>Latitude<input type="number" step="0.0001" value={form.latitude} onChange={(e) => updateForm("latitude", Number(e.target.value))} /></label><label>Longitude<input type="number" step="0.0001" value={form.longitude} onChange={(e) => updateForm("longitude", Number(e.target.value))} /></label></div></>}
+            {form.source === "live" && <><label>Site label<input value={form.location_name} maxLength={120} onChange={(e) => updateForm("location_name", e.target.value)} /></label><div className="split"><label>Latitude<input type="number" min="-90" max="90" step="0.0001" value={form.latitude} onChange={(e) => updateForm("latitude", Number(e.target.value))} /></label><label>Longitude<input type="number" min="-180" max="180" step="0.0001" value={form.longitude} onChange={(e) => updateForm("longitude", Number(e.target.value))} /></label></div></>}
             {form.source === "synthetic" && <label>Climate condition<select value={form.weather_condition} onChange={(e) => updateForm("weather_condition", e.target.value)}><option>Sunny / Clear Skies</option><option>Intermittent Clouds</option><option>Overcast / Rainy</option></select></label>}
           </section>
-          <section><div className="section-label"><span>02</span> POND GEOMETRY</div><div className="split"><label>Length X<input type="number" value={form.length} onChange={(e) => updateForm("length", Number(e.target.value))} /></label><label>Width Y<input type="number" value={form.width} onChange={(e) => updateForm("width", Number(e.target.value))} /></label></div><div className="split"><label>Depth Z<input type="number" step="0.1" value={form.depth} onChange={(e) => updateForm("depth", Number(e.target.value))} /></label><label>Grid<select value={form.grid} onChange={(e) => updateForm("grid", e.target.value)}><option value="fast">Fast</option><option value="standard">Standard</option><option value="high">High-res</option></select></label></div></section>
-          <section><div className="section-label"><span>03</span> STOCKING & FEED</div><label>Stocking count<input type="number" step="1000" value={form.stocking_count} onChange={(e) => updateForm("stocking_count", Number(e.target.value))} /></label><label>Average shrimp weight <b>{form.individual_weight_g}g</b><input type="range" min="5" max="35" value={form.individual_weight_g} onChange={(e) => updateForm("individual_weight_g", Number(e.target.value))} /></label><label>Feed profile<select value={form.feed_type} onChange={(e) => updateForm("feed_type", e.target.value)}><option>Ordinary Commercial Feed</option><option>Fortified Growth-Booster Feed</option></select></label></section>
+          <section><div className="section-label"><span>02</span> POND GEOMETRY</div><div className="split"><label>Length X (m)<input type="number" min="5" max="200" step="1" value={form.length || ""} onChange={(e) => updateForm("length", e.target.value === "" ? 0 : Number(e.target.value))} /></label><label>Width Y (m)<input type="number" min="5" max="200" step="1" value={form.width || ""} onChange={(e) => updateForm("width", e.target.value === "" ? 0 : Number(e.target.value))} /></label></div><div className="split"><label>Depth Z (m)<input type="number" min="0.5" max="4.0" step="0.1" value={form.depth || ""} onChange={(e) => updateForm("depth", e.target.value === "" ? 0 : Number(e.target.value))} /></label><label>Grid<select value={form.grid} onChange={(e) => updateForm("grid", e.target.value)}><option value="fast">Fast</option><option value="standard">Standard</option><option value="high">High-res</option></select></label></div></section>
+          <section><div className="section-label"><span>03</span> STOCKING & FEED</div><label>Stocking count <b>{form.stocking_count ? form.stocking_count.toLocaleString() : 0}</b><input type="number" min="500" max="300000" step="500" value={form.stocking_count || ""} onChange={(e) => updateForm("stocking_count", e.target.value === "" ? 0 : Number(e.target.value))} /></label><label>Average shrimp weight <b>{form.individual_weight_g}g</b><input type="range" min="2" max="45" step="0.5" value={form.individual_weight_g} onChange={(e) => updateForm("individual_weight_g", Number(e.target.value))} /></label><label>Feed profile<select value={form.feed_type} onChange={(e) => updateForm("feed_type", e.target.value)}><option>Ordinary Commercial Feed</option><option>Fortified Growth-Booster Feed</option></select></label></section>
           <section><div className="section-label"><span>04</span> AERATION</div><label className="toggle-row"><span>Paddlewheel aerators</span><input type="checkbox" checked={form.aeration_enabled} onChange={(e) => updateForm("aeration_enabled", e.target.checked)} /></label>{form.aeration_enabled && <div className="split"><label>Start<input type="number" min="0" max="23" value={form.aeration_start_hour} onChange={(e) => updateForm("aeration_start_hour", Number(e.target.value))} /></label><label>End<input type="number" min="0" max="23" value={form.aeration_end_hour} onChange={(e) => updateForm("aeration_end_hour", Number(e.target.value))} /></label></div>}</section>
           <button className="run-button" disabled={loading}>{loading ? "SOLVING PDE MODEL..." : "RUN SIMULATION  →"}</button>
         </form>
@@ -125,7 +186,7 @@ function App() {
 
 function Kpi({ label, value, hint }: { label: string; value: string; hint: string }) { return <div className="kpi"><span>{label}</span><strong>{value}</strong><small>{hint}</small></div>; }
 function SectionHeading({ kicker, title, text }: { kicker: string; title: string; text: string }) { return <div className="section-heading"><span className="eyebrow">{kicker}</span><h2>{title}</h2><p>{text}</p></div>; }
-function SpatialView({ spatial, hour, field, depthLayer, config, setHour, setField, setDepthLayer, contourView, setContourView }: any) { return <section className="content-section"><SectionHeading kicker="SPATIAL GRADIENTS" title="Explore the pond field by field" text="Inspect oxygen depletion, thermal stratification, and the benthic habitat at any hour." /><div className="toolbar"><label>TIME <input type="range" min="0" max="24" value={hour} onChange={(e) => setHour(Number(e.target.value))} /><b>{String(hour).padStart(2, "0")}:00</b></label><label>FIELD<select value={field} onChange={(e) => setField(e.target.value)}><option value="do">Dissolved oxygen</option><option value="temp">Temperature</option></select></label><label>DEPTH LAYER<select value={depthLayer} onChange={(e) => setDepthLayer(Number(e.target.value))}>{Array.from({ length: config.nz }, (_, index) => <option value={index} key={index}>Layer {index + 1}</option>)}</select></label></div>{spatial && <><div className="plot-grid"><div className="plot-panel"><span className="plot-label">3D VOLUME / {field === "do" ? "DISSOLVED OXYGEN" : "TEMPERATURE"}</span><Plot data={spatial.volume.data} layout={{ ...spatial.volume.layout, autosize: true }} useResizeHandler style={{ width: "100%", height: "560px" }} config={{ responsive: true, displaylogo: false }} /></div><div className="plot-panel"><span className="plot-label">HORIZONTAL SLICE / DEPTH {spatial.depth.toFixed(2)}M</span><Plot data={spatial.heatmap.data} layout={{ ...spatial.heatmap.layout, autosize: true }} useResizeHandler style={{ width: "100%", height: "440px" }} config={{ responsive: true, displaylogo: false }} /></div></div><div className="contour-section"><div className="contour-controls"><span className="plot-label">THESIS-GRADE 2D CONTOUR PROFILES</span><label><input type="radio" checked={contourView === "vertical"} onChange={() => setContourView("vertical")} /> Vertical cross-section (X-Z depth plane)</label><label><input type="radio" checked={contourView === "benthic"} onChange={() => setContourView("benthic")} /> Benthic floor habitat (X-Y floor plane)</label></div><Plot data={spatial.contours.data} layout={{ ...spatial.contours.layout, autosize: true }} useResizeHandler style={{ width: "100%", height: "520px" }} config={{ responsive: true, displaylogo: false }} /></div></>}</section>; }
+function SpatialView({ spatial, hour, field, depthLayer, config, setHour, setField, setDepthLayer, contourView, setContourView }: any) { return <section className="content-section"><SectionHeading kicker="SPATIAL GRADIENTS" title="Explore the pond field by field" text="Inspect oxygen depletion, thermal stratification, and the benthic habitat at any hour." /><div className="toolbar"><label>TIME <input type="range" min="0" max="24" value={hour} onChange={(e) => setHour(Number(e.target.value))} /><b>{String(hour).padStart(2, "0")}:00</b></label><label>FIELD<select value={field} onChange={(e) => setField(e.target.value)}><option value="do">Dissolved oxygen</option><option value="temp">Temperature</option></select></label><label>DEPTH LAYER<select value={depthLayer} onChange={(e) => setDepthLayer(Number(e.target.value))}>{Array.from({ length: config.nz }, (_, index) => <option value={index} key={index}>Layer {index + 1}</option>)}</select></label></div>{spatial && <><div className="plot-grid"><div className="plot-panel"><span className="plot-label">3D VOLUME / {field === "do" ? "DISSOLVED OXYGEN" : "TEMPERATURE"}</span><Plot data={spatial.volume.data} layout={{ ...spatial.volume.layout, autosize: true }} useResizeHandler style={{ width: "100%", height: "560px" }} config={{ responsive: true, displaylogo: false }} /><small className="model-credit">3D Model: <a href="https://sketchfab.com/3d-models/shrimp-low-poly-652650059ff949b39bbed3bfc34d5e87" target="_blank" rel="noreferrer">Shrimp [Low Poly]</a> by Fecalis (CC BY 4.0)</small></div><div className="plot-panel"><span className="plot-label">HORIZONTAL SLICE / DEPTH {spatial.depth.toFixed(2)}M</span><Plot data={spatial.heatmap.data} layout={{ ...spatial.heatmap.layout, autosize: true }} useResizeHandler style={{ width: "100%", height: "440px" }} config={{ responsive: true, displaylogo: false }} /></div></div><div className="contour-section"><div className="contour-controls"><span className="plot-label">THESIS-GRADE 2D CONTOUR PROFILES</span><label><input type="radio" checked={contourView === "vertical"} onChange={() => setContourView("vertical")} /> Vertical cross-section (X-Z depth plane)</label><label><input type="radio" checked={contourView === "benthic"} onChange={() => setContourView("benthic")} /> Benthic floor habitat (X-Y floor plane)</label></div><Plot data={spatial.contours.data} layout={{ ...spatial.contours.layout, autosize: true }} useResizeHandler style={{ width: "100%", height: "520px" }} config={{ responsive: true, displaylogo: false }} /></div></>}</section>; }
 function FeasibilityView({ report, config }: any) { return <section className="content-section"><SectionHeading kicker="BIOLOGICAL OUTLOOK" title="Is this pond carrying the plan?" text="The verdict combines spatial dissolved oxygen gradients, stocking density, and biological carrying capacity." /><div className="detail-grid"><div className="detail-card"><span className="plot-label">TECHNICAL VERDICT</span><h3>{report.verdict}</h3><p>{report.primary_reason}</p><ul>{report.detailed_reasons.map((reason: string) => <li key={reason}>{reason}</li>)}</ul>{report.aeration_schedule_recommendation && <div className="recommendation">{report.aeration_schedule_recommendation}</div>}</div><div className="detail-card"><span className="plot-label">POND & PRODUCTION</span><MetricRow label="Stocking count" value={`${config.stocking_count.toLocaleString()} juveniles`} /><MetricRow label="Floor density" value={`${report.stocking_density_m2.toFixed(1)} shrimp/m²`} /><MetricRow label="Carrying status" value={report.carrying_capacity_status} /><MetricRow label="Projected survival" value={`${report.projected_survival_rate_pct.toFixed(1)}%`} /><MetricRow label="Harvest biomass" value={`${report.projected_harvest_biomass_kg.toFixed(1)} kg`} /></div></div></section>; }
 function MetricRow({ label, value }: { label: string; value: string }) { return <div className="metric-row"><span>{label}</span><strong>{value}</strong></div>; }
 function OptimizerView({ rows, run, loading }: { rows: any[]; run: () => void; loading: boolean }) { return <section className="content-section"><SectionHeading kicker="SCENARIO OPTIMIZER" title="Find the sustainable edge of capacity" text="Compare stocking density and feed regimes against the hypoxia tipping point." /><button className="secondary-button" onClick={run} disabled={loading}>{loading ? "RUNNING CAPACITY SWEEP..." : "RUN CAPACITY SWEEP  →"}</button>{rows.length > 0 && <div className="table-wrap"><table><thead><tr><th>Stocking</th><th>Feed</th><th>Min bottom DO</th><th>Verdict</th><th>Harvest biomass</th></tr></thead><tbody>{rows.map((row) => <tr key={`${row.stocking_count}-${row.feed_type}`}><td>{row.stocking_count.toLocaleString()}</td><td>{row.feed_type.replace(" Feed", "")}</td><td>{row.min_bottom_do.toFixed(2)} mg/L</td><td><span className="table-status">{row.verdict}</span></td><td>{row.harvest_biomass_kg.toFixed(1)} kg</td></tr>)}</tbody></table></div>}</section>; }
