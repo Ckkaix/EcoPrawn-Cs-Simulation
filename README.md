@@ -1,47 +1,41 @@
-# EcoPrawn React + FastAPI Application
+# EcoPrawn CS Simulation
 
-This folder contains the new EcoPrawn application. It is separate from the
-legacy Streamlit application in the repository root (`app.py`).
+EcoPrawn is a React and FastAPI application for simulating pond water quality,
+shrimp stocking, and production feasibility.
 
-## Start the FastAPI backend
+## Run locally
 
-Open a terminal in `backend`:
+### 1. Start the FastAPI backend
 
-```bash
+Open PowerShell in the project folder:
+
+```powershell
+cd backend
 python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python -m uvicorn main:app --reload --port 8000
 ```
 
-Activate the virtual environment, install the dependencies, and start the API:
+The backend API and interactive documentation are available at:
 
-```bash
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
-```
+- http://localhost:8000/api/health
+- http://localhost:8000/docs
 
-## Start the React frontend
+Keep this terminal running.
 
-Open a second terminal in `frontend`:
+### 2. Start the React frontend
 
-```bash
+Open a second PowerShell window in the project folder:
+
+```powershell
+cd frontend
 npm install
 npm run dev
 ```
 
-Open `http://localhost:5173`.
+Open the frontend at:
 
-The frontend uses the Vite `/api` proxy to connect to the local backend by
-default. To use another API URL, set `VITE_API_URL` before starting Vite.
+- http://localhost:5173
 
-## Create a separate GitHub repository
-
-Use the contents of this `new-app` directory as the root of the new repository.
-It includes both the React frontend and the self-contained FastAPI backend.
-
-```bash
-git init
-git add .
-git commit -m "Create EcoPrawn React and FastAPI application"
-git branch -M main
-git remote add origin <your-new-repository-url>
-git push -u origin main
-```
+The frontend uses the Vite `/api` proxy to connect to the local backend.
